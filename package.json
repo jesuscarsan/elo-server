@@ -1,0 +1,24 @@
+{
+  "name": "elo-server",
+  "version": "1.0.0",
+  "description": "This is the Python-based backend for Elocuency, responsible for handling AI interactions via **LangChain** and **FastAPI**.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jesuscarsan/elo-server.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jesuscarsan/elo-server/issues"
+  },
+  "homepage": "https://github.com/jesuscarsan/elo-server#readme",
+  "devDependencies": {
+    "n8n": "^2.7.5",
+    "sqlite3": "^5.1.7"
+  }
+}

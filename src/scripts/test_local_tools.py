@@ -8,13 +8,7 @@ async def test_manual_verification():
     print("--- Starting Local Tool Manager verification ---")
     
     # 1. Setup
-    workspace_path = Path("workspace/tools")
-    if workspace_path.exists():
-        # clean up previous tests
-        # shutil.rmtree(workspace_path)
-        pass
-    
-    manager = LocalToolManager(str(workspace_path))
+    manager = LocalToolManager()
     
     # 2. Create a tool file manually
     tool_code = """

@@ -30,7 +30,7 @@ from chromadb.config import Settings
 from src.domain.ports.obsidian_port import ObsidianPort
 
 class LangChainObsidianAdapter(ObsidianPort):
-    def __init__(self, vault_path: str, google_api_key: str, persist_directory: str = "./workspace/chroma_db"):
+    def __init__(self, vault_path: str, google_api_key: str, persist_directory: str = "../../workspace/chromadb"):
         self.vault_path = vault_path
         self.persist_directory = persist_directory
         

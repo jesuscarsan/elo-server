@@ -7,60 +7,79 @@ from typing import List, Optional, Any
 from langchain_core.tools import BaseTool, StructuredTool, tool
 
 class LocalToolManager:
-    def __init__(self, tools_dir: str = "../../workspace/tools"):
-        self.tools_dir = Path(tools_dir).resolve()
-        self.tools: List[BaseTool] = []
-        if not self.tools_dir.exists():
-            self.tools_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, tools_dirs: Optional[List[str]] = None):
+        if tools_dirs:
+            self.tools_dirs = [Path(d).resolve() for d in tools_dirs]
+        else:
+            # Default directories: assets and workspace
+            self.tools_dirs = []
             
-        # Add tools dir to sys.path so imports work easily
-        if str(self.tools_dir) not in sys.path:
-            sys.path.append(str(self.tools_dir))
+            # 1. Assets (official/git-tracked)
+            assets_path = "/app/assets/langchain/tools" if os.path.exists("/app/assets/langchain/tools") else None
+            if not assets_path:
+                # New path: apps/elo-server/assets/langchain/tools
+                assets_path = Path(os.path.dirname(__file__)).resolve().parents[2] / "assets" / "langchain" / "tools"
+            
+            # 2. Workspace (local/user-defined)
+            workspace_path = "/app/workspace/langchain/tools" if os.path.exists("/app/workspace/langchain/tools") else None
+            if not workspace_path:
+                root_path = Path(os.path.dirname(__file__)).resolve().parents[4]
+                workspace_path = root_path / "workspace" / "langchain" / "tools"
+
+            self.tools_dirs = [assets_path, workspace_path]
+
+        # Ensure directories exist (at least the workspace one)
+        for d in self.tools_dirs:
+            if not d.exists():
+                print(f"Creating tools directory: {d}")
+                d.mkdir(parents=True, exist_ok=True)
+            
+            # Add tools dir to sys.path so imports work easily
+            if str(d) not in sys.path:
+                sys.path.append(str(d))
+            
+        # The primary directory for creating new tools is the workspace one
+        self.primary_tools_dir = self.tools_dirs[-1]
 
     def load_tools(self) -> List[BaseTool]:
         """
-        Scans the tools directory and loads all valid LangChain tools.
+        Scans all tools directories and loads all valid LangChain tools.
         """
         self.tools = []
-        print(f"Scanning for tools in {self.tools_dir}...")
-        
-        # Ensure the directory exists
-        if not self.tools_dir.exists():
-            print(f"Tools directory {self.tools_dir} does not exist. Creating it.")
-            self.tools_dir.mkdir(parents=True, exist_ok=True)
-            
-        for filename in os.listdir(self.tools_dir):
-            if filename.endswith(".py") and not filename.startswith("__"):
-                module_name = filename[:-3]
-                file_path = self.tools_dir / filename
+        for d in self.tools_dirs:
+            print(f"Scanning for tools in {d}...")
+            if not d.exists():
+                continue
                 
-                try:
-                    print(f"Loading tool module: {module_name} from {file_path}")
-                    # Dynamic import
-                    spec = importlib.util.spec_from_file_location(module_name, file_path)
-                    if spec and spec.loader:
-                        module = importlib.util.module_from_spec(spec)
-                        sys.modules[module_name] = module
-                        spec.loader.exec_module(module)
-                        
-                        # Inspect module for tools
-                        found_tools_in_module = 0
-                        for name, obj in inspect.getmembers(module):
-                            if isinstance(obj, BaseTool):
-                                self.tools.append(obj)
-                                found_tools_in_module += 1
-                                print(f"  Found tool: {obj.name}")
-                            # Also check for functions decorated with @tool
-                            # LangChain @tool decorator returns a BaseTool (StructuredTool)
-                            # so the first check should cover it.
+            for filename in os.listdir(d):
+                if filename.endswith(".py") and not filename.startswith("__"):
+                    module_name = filename[:-3]
+                    file_path = d / filename
+                    
+                    try:
+                        print(f"Loading tool module: {module_name} from {file_path}")
+                        # Dynamic import
+                        spec = importlib.util.spec_from_file_location(module_name, file_path)
+                        if spec and spec.loader:
+                            module = importlib.util.module_from_spec(spec)
+                            sys.modules[module_name] = module
+                            spec.loader.exec_module(module)
                             
-                        if found_tools_in_module == 0:
-                             print(f"  No tools found in {module_name}")
+                            # Inspect module for tools
+                            found_tools_in_module = 0
+                            for name, obj in inspect.getmembers(module):
+                                if isinstance(obj, BaseTool):
+                                    self.tools.append(obj)
+                                    found_tools_in_module += 1
+                                    print(f"  Found tool: {obj.name}")
                                 
-                except Exception as e:
-                    print(f"Error loading tool module {module_name}: {e}")
-                    import traceback
-                    traceback.print_exc()
+                            if found_tools_in_module == 0:
+                                 print(f"  No tools found in {module_name}")
+                                    
+                    except Exception as e:
+                        print(f"Error loading tool module {module_name}: {e}")
+                        import traceback
+                        traceback.print_exc()
 
         return self.tools
 
@@ -71,7 +90,7 @@ class LocalToolManager:
         if not filename.endswith(".py"):
             filename += ".py"
             
-        file_path = self.tools_dir / filename
+        file_path = self.primary_tools_dir / filename
         
         # specific validation could go here
         

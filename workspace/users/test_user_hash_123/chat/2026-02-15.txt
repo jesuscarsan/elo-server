@@ -1,2 +1,0 @@
-[12:20:20] USER: Hello, this is a test message to verify logging.
-[12:20:20] AI: Okay, I acknowledge this is a test message to verify logging.

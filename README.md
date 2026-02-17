@@ -43,23 +43,76 @@ It follows **Hexagonal Architecture** and uses **snake_case** per PEP 8 standard
     PORT=8000
     ```
 
-## Running the Server
+## Running the Web Server
 
-Start the server using `uvicorn`:
+The web server exposes a **FastAPI** application with REST endpoints and a **LangServe Playground** for interactive chat.
+
+### Option 1: Via `python`
 
 ```bash
-# Provide the module path to main:app
+export PYTHONPATH=$PYTHONPATH:$(pwd)
 python src/main.py
 ```
 
-Or run uvicorn directly:
+Esto arranca uvicorn internamente usando la configuración de `config.yaml` (host, port, reload).
+
+### Option 2: Via `uvicorn` directamente
 
 ```bash
+export PYTHONPATH=$PYTHONPATH:$(pwd)
 uvicorn src.main:app --reload
 ```
+
+El servidor estará disponible en `http://localhost:8000` (puerto por defecto).
+
+---
+
+## Running the CLI (Chat Interactivo)
+
+El CLI permite interactuar con el agente de IA directamente desde el terminal, sin necesidad de levantar el servidor web.
+
+```bash
+./cli.sh
+```
+
+O manualmente:
+
+```bash
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+./venv/bin/python src/scripts/cli.py
+```
+
+Al iniciar, el CLI:
+
+1. Carga la configuración desde `config.yaml`.
+2. Inicializa el **MCP Manager** y carga las herramientas (MCP + local).
+3. Solicita un **User ID** (o genera uno aleatorio).
+4. Abre un bucle de chat interactivo. Escribe `exit` o `quit` para salir.
+
+---
+
+## LangServe Playground
+
+El proyecto incluye un **playground web** proporcionado por [LangServe](https://github.com/langchain-ai/langserve) que permite probar el agente de IA desde el navegador.
+
+### Cómo acceder
+
+1. **Levanta el servidor web** (ver sección anterior).
+2. Abre en el navegador una de las siguientes URLs:
+
+| Playground         | URL                                              | Descripción                                  |
+| ------------------ | ------------------------------------------------ | -------------------------------------------- |
+| **Agent completo** | `http://localhost:8000/agent/playground/`        | Agente LangGraph con tools, memoria y MCP    |
+| **Simple Agent**   | `http://localhost:8000/simple-agent/playground/` | Modelo Gemini directo (sin tools ni memoria) |
+
+> **Nota:** La barra final `/` en la URL es obligatoria.
+
+El playground ofrece una interfaz de chat donde puedes enviar mensajes y ver las respuestas del agente en tiempo real, incluyendo las llamadas a herramientas (tool calls) cuando el agente las utiliza.
+
+---
 
 ## API Endpoints
 
 - **Health Check**: `GET /health`
 - **Ask AI**: `POST /ask`
-  - Body: `{"prompt": "Your question here"}`
+  - Body: `{"prompt": "Your question here", "user_id": "optional_id"}`

@@ -32,8 +32,25 @@ def load_config(config_path: str = "../../workspace/config.yaml") -> AppConfig:
     Loads configuration from a YAML file and validates it using Pydantic.
     Allows overriding with environment variables if necessary.
     """
+    # Try to find config in the current directory if relative fails
+    if not os.path.isabs(config_path):
+        # Resolve relative to the app root (one level up from src)
+        possible_paths = [
+            config_path, # Standard relative path from src
+            os.path.join(os.path.dirname(__file__), "..", "..", "workspace", "config.yaml"), # Absolute reference
+            "/app/workspace/config.yaml" # Docker path
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                config_path = p
+                break
+
     if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        # Fallback to current directory for development convenience
+        if os.path.exists("workspace/config.yaml"):
+            config_path = "workspace/config.yaml"
+        else:
+            raise FileNotFoundError(f"Configuration file not found in any of: {possible_paths}")
 
     with open(config_path, "r") as f:
         config_dict = yaml.safe_load(f)

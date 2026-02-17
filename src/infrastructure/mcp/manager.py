@@ -14,7 +14,12 @@ from src.infrastructure.config import load_config
 class MCPManager:
     def __init__(self):
         self.config = load_config()
-        self.workspace_path = Path("../../workspace/mcps").resolve()
+        # Handle Docker and local paths
+        if os.path.exists("/app/workspace/mcps"):
+            self.workspace_path = Path("/app/workspace/mcps").resolve()
+        else:
+            self.workspace_path = Path(os.path.dirname(__file__)).parent.parent / "workspace" / "mcps"
+            self.workspace_path = self.workspace_path.resolve()
         self._sessions: List[ClientSession] = []
         self._exit_stack = AsyncExitStack()
         self._background_tasks: List[asyncio.Task] = []

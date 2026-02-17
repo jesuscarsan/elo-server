@@ -51,8 +51,145 @@ async def lifespan(app: FastAPI):
     await mcp_manager.stop()
 
 from langserve import add_routes
+import re as re_module
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-# ... imports ...
+class ConstToEnumMiddleware:
+    """
+    Middleware to fix Pydantic v2 'const' -> 'enum' for LangServe chat playground.
+    Also patches AI message types for the UI.
+    Uses raw ASGI middleware instead of BaseHTTPMiddleware to avoid breaking SSE streaming.
+    """
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        
+        # Intercept streaming paths (/stream_log, /stream) and non-streaming ones
+        is_streaming = path.endswith("/stream_log") or path.endswith("/stream")
+        is_schema = path.endswith("/output_schema") or path.endswith("/playground/")
+        
+        if not is_streaming and not is_schema:
+            await self.app(scope, receive, send)
+            return
+
+        if is_streaming:
+            # For streaming paths, patch chunks on the fly without buffering the whole response
+            async def streaming_send(message):
+                if message["type"] == "http.response.body":
+                    chunk = message.get("body", b"")
+                    if chunk:
+                        try:
+                            # Patch "type": "ai" -> "type": "AIMessage" in the chunk
+                            text = chunk.decode("utf-8", errors="replace")
+                            text = re_module.sub(r'"type":\s*"ai"', '"type": "AIMessage"', text)
+                            text = re_module.sub(r'"type":\s*"human"', '"type": "HumanMessage"', text)
+                            # Also apply the const->enum fix to streaming chunks if needed
+                            text = re_module.sub(
+                                r'"const":\s*"(ai|human|chat|system|function|tool|AIMessageChunk|HumanMessageChunk|ChatMessageChunk|SystemMessageChunk|FunctionMessageChunk|ToolMessageChunk)"',
+                                lambda m: f'"enum": ["{m.group(1)}"]',
+                                text
+                            )
+                            message["body"] = text.encode("utf-8")
+                        except Exception:
+                            pass
+                await send(message)
+            
+            await self.app(scope, receive, streaming_send)
+            return
+
+        # For schema/playground paths, buffer and apply fix
+        response_headers = []
+        status_code = 200
+        body_chunks = []
+
+        async def capture_send(message):
+            nonlocal response_headers, status_code
+            if message["type"] == "http.response.start":
+                status_code = message.get("status", 200)
+                response_headers = message.get("headers", [])
+            elif message["type"] == "http.response.body":
+                body_chunks.append(message.get("body", b""))
+
+        await self.app(scope, receive, capture_send)
+
+        body = b"".join(body_chunks)
+        try:
+            text = body.decode("utf-8", errors="replace")
+            
+            # Replace "const": "ai" with "enum": ["ai"] (and similar message types)
+            text = re_module.sub(
+                r'"const":\s*"(ai|human|chat|system|function|tool|AIMessageChunk|HumanMessageChunk|ChatMessageChunk|SystemMessageChunk|FunctionMessageChunk|ToolMessageChunk)"',
+                lambda m: f'"enum": ["{m.group(1)}"]',
+                text
+            )
+            # Patch types here as well
+            text = re_module.sub(r'"type":\s*"ai"', '"type": "AIMessage"', text)
+            text = re_module.sub(r'"type":\s*"human"', '"type": "HumanMessage"', text)
+
+            new_body = text.encode("utf-8")
+        except Exception:
+            new_body = body
+
+        # Build response headers, excluding content-length (it may have changed)
+        out_headers = [
+            (k, v) for k, v in response_headers
+            if k.lower() != b"content-length"
+        ]
+
+        # --- UI Customization Injection ---
+        if path.endswith("/playground/"):
+            custom_style = """
+<style>
+    button.share-button { display: none !important; }
+    nav > div.flex.items-center > svg { display: none !important; }
+    /* Ensure the branding span is visible and looks like a logo */
+    nav > div.flex.items-center > span.ml-1 {
+        font-weight: 700;
+        font-size: 1.25rem;
+        color: #1a202c;
+        margin-left: 0 !important;
+    }
+</style>
+"""
+            custom_script = """
+<script>
+    (function() {
+        const replaceBranding = () => {
+            document.title = "Elocuency";
+            const span = document.querySelector('nav > div.flex.items-center > span.ml-1');
+            if (span && span.textContent !== "Elocuency") {
+                span.textContent = "Elocuency";
+            }
+        };
+        replaceBranding();
+        const observer = new MutationObserver(replaceBranding);
+        observer.observe(document.body, { childList: true, subtree: true });
+    })();
+</script>
+"""
+            text = text.replace("</head>", f"{custom_style}</head>")
+            text = text.replace("</body>", f"{custom_script}</body>")
+            new_body = text.encode("utf-8")
+        else:
+            new_body = text.encode("utf-8")
+
+        out_headers.append((b"content-length", str(len(new_body)).encode()))
+
+        await send({
+            "type": "http.response.start",
+            "status": status_code,
+            "headers": out_headers,
+        })
+        await send({
+            "type": "http.response.body",
+            "body": new_body,
+        })
 
 def bootstrap():
     """
@@ -98,6 +235,7 @@ def bootstrap():
         """
         Injects thread_id from session_id for MemorySaver compatibility.
         """
+        import uuid
         cfg = config.copy()
         configurable = cfg.get("configurable", {})
         
@@ -105,10 +243,11 @@ def bootstrap():
         if "session_id" in configurable:
             configurable["thread_id"] = configurable["session_id"]
         elif "thread_id" not in configurable:
-            configurable["thread_id"] = "default_playground_thread"
+            configurable["thread_id"] = f"playground_{uuid.uuid4().hex[:8]}"
             
         cfg["configurable"] = configurable
         return cfg
+
 
     # Create the chain: Adapter -> Graph
     # We pass ai_adapter directly. The adapter handles input sanitization and stream adaptation.
@@ -135,41 +274,8 @@ def bootstrap():
         per_req_config_modifier=per_req_config_modifier
     )
 
-    # Middleware to fix Pydantic v2 'const' -> 'enum' for LangServe chat playground.
-    # The chat playground frontend checks `option.properties?.type?.enum?.includes("ai")`
-    # but Pydantic v2 generates `const: "ai"` instead of `enum: ["ai"]`.
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.responses import Response
-    import json as json_module
-
-    class ConstToEnumMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request, call_next):
-            response = await call_next(request)
-            path = request.url.path
-            if path.endswith("/output_schema") or path.endswith("/playground/"):
-                body = b""
-                async for chunk in response.body_iterator:
-                    if isinstance(chunk, str):
-                        body += chunk.encode()
-                    else:
-                        body += chunk
-                text = body.decode()
-                # Replace "const": "ai" with "enum": ["ai"] (and similar message types)
-                import re
-                text = re.sub(
-                    r'"const":\s*"(ai|human|chat|system|function|tool|AIMessageChunk|HumanMessageChunk|ChatMessageChunk|SystemMessageChunk|FunctionMessageChunk|ToolMessageChunk)"',
-                    lambda m: f'"enum": ["{m.group(1)}"]',
-                    text
-                )
-                return Response(
-                    content=text,
-                    status_code=response.status_code,
-                    headers={k: v for k, v in response.headers.items() if k.lower() != 'content-length'},
-                    media_type=response.media_type
-                )
-            return response
-
     app.add_middleware(ConstToEnumMiddleware)
+
 
     return app
 

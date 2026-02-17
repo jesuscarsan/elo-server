@@ -1,0 +1,92 @@
+{
+    "name": "Telegram to LangChain (Webhook)",
+    "nodes": [
+        {
+            "parameters": {
+                "updates": [
+                    "message"
+                ],
+                "additionalFields": {}
+            },
+            "id": "5e865f90-1e8c-4f7d-b5b6-7e5f5f5f5f5f",
+            "name": "Telegram Trigger",
+            "type": "n8n-nodes-base.telegramTrigger",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "YOUR_TELEGRAM_CREDENTIALS_ID",
+                    "name": "Telegram Bot"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://elo-server:8001/agent/invoke",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"input\": {\n    \"messages\": [\n      {\n        \"type\": \"human\",\n        \"content\": \"{{$json.message.text}}\"\n      }\n    ]\n  }\n}",
+                "options": {}
+            },
+            "id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+            "name": "Call LangChain",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 1,
+            "position": [
+                470,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "chatId": "={{$node[\"Telegram Trigger\"].json[\"message\"][\"chat\"][\"id\"]}}",
+                "text": "={{$json.output.content}}",
+                "additionalFields": {}
+            },
+            "id": "f5e6d7c8-b9a0-4c3d-2e1f-0a9b8c7d6e5f",
+            "name": "Telegram Reply",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                690,
+                300
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "YOUR_TELEGRAM_CREDENTIALS_ID",
+                    "name": "Telegram Bot"
+                }
+            }
+        }
+    ],
+    "connections": {
+        "Telegram Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Call LangChain",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Call LangChain": {
+            "main": [
+                [
+                    {
+                        "node": "Telegram Reply",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "settings": {}
+}
