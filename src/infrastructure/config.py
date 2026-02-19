@@ -53,12 +53,15 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
     2. Sensitive data from environment variables (.env)
     3. Docker-specific path automation
     """
-    # 1. Find and load elo.config.json
+    # 1. Find and load elo-config.json
     possible_json_paths = [
-        "elo.config.json",
-        "/app/elo.config.json",
-        os.path.join(os.path.dirname(__file__), "..", "..", "elo.config.json"),
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "elo.config.json")
+        "elo-config.json",
+        "/app/elo-config.json",
+        "/app/workspace/elo-config.json",
+        os.path.join(os.path.dirname(__file__), "..", "..", "elo-config.json"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "workspace", "elo-config.json"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "elo-config.json"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "workspace", "elo-config.json")
     ]
     
     config_dict = {}

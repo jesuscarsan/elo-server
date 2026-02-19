@@ -1,0 +1,68 @@
+services:
+  # 1. AI Logic Server (Python/LangChain)
+  elo-server:
+    build:
+      context: ./apps/elo-server
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - N8N_HOST=http://n8n:5678
+      - N8N_WORKFLOWS_DIR=/app/workspace/n8n/workflows
+      - LOG_FILE=/app/workspace/logs/elo-server.log
+      - OBSIDIAN_API_KEY=${OBSIDIAN_API_KEY}
+      - OBSIDIAN_URL=${OBSIDIAN_URL}
+    volumes:
+      - ./apps/elo-server/src:/app/src
+      - ./workspace:/app/workspace
+      - ./apps/elo-server/assets:/app/assets
+      - ${VAULT_PATH}:/data/vault:ro
+      - ./workspace/elo-config.json:/app/elo-config.json
+    # Ensure logs directory exists and pipe output to file while keeping it in console
+    command: >
+      sh -c "mkdir -p /app/workspace/logs && 
+             uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload 2>&1 | tee -a /app/workspace/logs/elo-server.log"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # 2. Automation Engine (n8n)
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_PORT=5678
+      - GENERIC_TIMEZONE=Europe/Madrid
+      - N8N_LOG_LEVEL=info
+      - N8N_LOG_OUTPUT=file,console
+      - N8N_LOG_FILE_LOCATION=/home/node/.n8n/logs/n8n.log
+    volumes:
+      - ./workspace/n8n/data:/home/node/.n8n
+      - ./workspace/n8n/workflows:/home/node/n8n/workflows
+      - ./workspace/logs:/home/node/.n8n/logs
+      - ./workspace/n8n:/home/node/n8n-root
+    # Use the tunnel flag for development to get an HTTPS URL for Telegram
+    entrypoint: /bin/sh
+    command: >
+      -c "sh -c '
+          while ! wget -qO- http://ngrok:4040/api/tunnels 2>/dev/null | grep -q \"public_url\"; do sleep 2; done; 
+          URL=$$(wget -qO- http://ngrok:4040/api/tunnels 2>/dev/null | sed -n \"s/.*\\\"public_url\\\":\\\"\\([^\\\" ]*\\)\\\".*/\\1/p\" | head -n 1);
+          echo \"$$URL\" > /home/node/n8n-root/public-url.txt;
+          export WEBHOOK_URL=\"$$URL\";
+          /docker-entrypoint.sh start
+          '"
+    restart: unless-stopped
+
+  # 3. Public Exposure (Ngrok)
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    command:
+      - "http"
+      - "n8n:5678"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    depends_on:
+      - n8n

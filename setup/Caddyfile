@@ -1,0 +1,27 @@
+{
+    # Global options
+    admin off
+}
+
+:80 {
+    # Logging
+    log {
+        output file /var/log/caddy/access.log
+    }
+
+    # Route n8n
+    handle_path /n8n* {
+        reverse_proxy n8n:5678 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # Route everything else to elo-server
+    handle {
+        reverse_proxy elo-server:8001 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+}

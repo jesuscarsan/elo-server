@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # 0. Entry Point (Caddy Reverse Proxy)
+  caddy:
+    image: caddy:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ${ELO_WORKSPACE_PATH:-../../elo-workspace}/caddy_data:/data
+      - ${ELO_WORKSPACE_PATH:-../../elo-workspace}/caddy_config:/config
+      - ${ELO_WORKSPACE_PATH:-../../elo-workspace}/logs/caddy:/var/log/caddy
+
+  # 1. AI Logic Server (Python/LangChain)
+  elo-server:
+    build:
+      context: ../apps/elo-server
+      dockerfile: Dockerfile
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - N8N_HOST=http://n8n:5678
+      - N8N_WORKFLOWS_DIR=/app/workspace/n8n/workflows
+      - LOG_FILE=/app/workspace/logs/elo-server.log
+      - OBSIDIAN_API_KEY=${OBSIDIAN_API_KEY}
+      - OBSIDIAN_URL=${OBSIDIAN_URL}
+    volumes:
+      - ${ELO_WORKSPACE_PATH:-../../elo-workspace}:/app/workspace
+      - ${VAULT_PATH}:/data/vault:ro
+      - ${ELO_WORKSPACE_PATH:-../../elo-workspace}/elo-config.json:/app/elo-config.json
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 2. Automation Engine (n8n)
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      - N8N_PORT=5678
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Europe/Madrid}
+      - N8N_LOG_LEVEL=info
+      - N8N_PATH=/n8n/
+    volumes:
+      - ${ELO_WORKSPACE_PATH:-../../elo-workspace}/n8n/data:/home/node/.n8n
+      - ${ELO_WORKSPACE_PATH:-../../elo-workspace}/n8n/workflows:/home/node/n8n/workflows
+      - ${ELO_WORKSPACE_PATH:-../../elo-workspace}/logs:/home/node/.n8n/logs
+      - ${ELO_WORKSPACE_PATH:-../../elo-workspace}/n8n:/home/node/n8n-root
+    restart: unless-stopped
+
+  # 3. Public Exposure (Ngrok)
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    command:
+      - "http"
+      - "caddy:80"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    depends_on:
+      - caddy

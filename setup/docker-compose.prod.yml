@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  elo-server:
+    # Production start command (no --reload)
+    command: >
+      sh -c "mkdir -p /app/workspace/logs && 
+             uvicorn src.main:app --host 0.0.0.0 --port 8001 2>&1 | tee -a /app/workspace/logs/elo-server.log"
+
+  n8n:
+    # In production, we still use the ngrok URL for webhooks if that's the chosen domain strategy
+    entrypoint: /bin/sh
+    command: >
+      -c "sh -c '
+          while ! wget -qO- http://ngrok:4040/api/tunnels 2>/dev/null | grep -q \"public_url\"; do sleep 2; done; 
+          URL=$$(wget -qO- http://ngrok:4040/api/tunnels 2>/dev/null | sed -n \"s/.*\\\"public_url\\\":\\\"\\([^\\\" ]*\\)\\\".*/\\1/p\" | head -n 1);
+          echo \"$$URL\" > /home/node/n8n-root/public-url.txt;
+          export WEBHOOK_URL=\"$$URL/n8n/\";
+          /docker-entrypoint.sh start
+          '"

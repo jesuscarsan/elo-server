@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  elo-server:
+    volumes:
+      # Mount source code for hot-reloading
+      - ..:/app
+    command: >
+      sh -c "mkdir -p /app/workspace/logs && 
+             uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload 2>&1 | tee -a /app/workspace/logs/elo-server.log"
+
+  n8n:
+    # Use the tunnel flag for development to get an HTTPS URL for Telegram
+    entrypoint: /bin/sh
+    command: >
+      -c "sh -c '
+          while ! wget -qO- http://ngrok:4040/api/tunnels 2>/dev/null | grep -q \"public_url\"; do sleep 2; done; 
+          URL=$$(wget -qO- http://ngrok:4040/api/tunnels 2>/dev/null | sed -n \"s/.*\\\"public_url\\\":\\\"\\([^\\\" ]*\\)\\\".*/\\1/p\" | head -n 1);
+          echo \"$$URL\" > /home/node/n8n-root/public-url.txt;
+          export WEBHOOK_URL=\"$$URL/n8n/\";
+          /docker-entrypoint.sh start
+          '"
